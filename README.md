@@ -86,7 +86,7 @@ Create a new file for the backup script logic.
 ```bash
     nano $HOME/backup_vichan_borg.sh
 ```
-Copy the entire contents of the backup_vichan_borg.sh script below into this file. Edit the "CONFIGURE YOUR SETTINGS HERE" section at the top with your specific database credentials, paths, and passphrase.
+Copy the entire contents of the backup_vichan_borg.sh script into this file. Edit the "CONFIGURE YOUR SETTINGS HERE" section at the top with your specific database credentials, paths, and passphrase.
 4. Make the Script Executable
 ```bash
     chmod +x $HOME/backup_vichan_borg.sh
@@ -118,7 +118,7 @@ nano $HOME/restore_vichan_borg.sh
 # Make it executable
 chmod +x $HOME/restore_vichan_borg.sh
 ```
-Copy the entire contents of the restore_vichan_borg.sh script below into this file. Edit the configuration section to match your setup.
+Copy the entire contents of the restore_vichan_borg.sh script into this file. Edit the configuration section to match your setup.
 
 2. List Available Backups
 First, find the exact "point in time" you want to restore.
