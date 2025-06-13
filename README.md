@@ -17,10 +17,11 @@ sudo access on both machines.
 BorgBackup installed on both machines. You can install it with: sudo apt update && sudo apt install borgbackup.
 Setup Instructions
 These instructions will guide you through setting up the backup repository on your backup server and configuring the backup script on your Vichan server.
-Step 1: Prepare the Backup Server (e.g., Raspberry Pi)
+
+#Step 1: Prepare the Backup Server (e.g., Raspberry Pi)
 First, we need to create a directory for the backups and give your user the correct permissions.
 On your Backup Server:
-# Replace 'pi' with your actual username if it is different.
+#Replace 'pi' with your actual username if it is different.
 
 # Create the directory that will hold the backup repository
 sudo mkdir -p /path/to/your/borg_repo
@@ -29,7 +30,8 @@ sudo mkdir -p /path/to/your/borg_repo
 sudo chown pi:pi /path/to/your/borg_repo
 Use code with caution.
 Bash
-Step 2: Initialize the Borg Repository
+
+#Step 2: Initialize the Borg Repository
 This command creates the encrypted repository. This is a one-time setup.
 On your Backup Server:
 # Run this command as your regular user (no sudo).
@@ -38,7 +40,8 @@ borg init --encryption=repokey /path/to/your/borg_repo
 Use code with caution.
 Bash
 Borg will prompt you to create a new passphrase. This is the master password for your entire backup set. Choose a strong passphrase and save it securely in a password manager. If you lose this passphrase, your backups are unrecoverable.
-Step 3: Export the Repository Key
+
+#Step 3: Export the Repository Key
 To allow for automated backups, we need to export the repository's key.
 On your Backup Server:
 # This will create a key file in your home directory.
@@ -46,7 +49,8 @@ borg key export /path/to/your/borg_repo ~/exported_borg_key
 Use code with caution.
 Bash
 Borg will ask for the passphrase you just created to authorize this export.
-Step 4: Configure the Vichan Server
+
+#Step 4: Configure the Vichan Server
 Now, we will set up the server that hosts your imageboard.
 On your Vichan Server:
 Copy the Repository Key:
