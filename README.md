@@ -1,5 +1,5 @@
 
-# Vichan Backup and Restore scrtip
+# Vichan Backup and Restore script
 
 This project provides a robust, secure, and automated solution for creating backups of a Vichan imageboard. It uses BorgBackup to create space-efficient, encrypted, and deduplicated backups and transfers them to a secondary machine on your local network, such as a Raspberry Pi.
 
