@@ -1,43 +1,75 @@
 #!/bin/bash
-# FINAL WORKING VERSION - v3.0
+# =================================================================
+# VICHAN BORG BACKUP SCRIPT
+# Author: Z4ph0d42
+# Version: 1.2 - Self-Cleaning
+# =================================================================
 
-# --- CONFIGURATION ---
-DB_USER="vichan"
-DB_PASS="Password"
-DB_NAME="vichan_db"
-VICHAN_PATH="path"
-BOT_PATH="path"
+# --- Configuration ---
+# IMPORTANT: Fill in these variables with your actual credentials and paths.
+# It is strongly recommended to use a .my.cnf file for database credentials
+# instead of putting the password directly in the script.
 
-export BORG_REPO="path"
-export BORG_KEY_FILE="key"
-export BORG_PASSPHRASE="Password"
-# --- END OF CONFIGURATION ---
+# Database settings
+DB_NAME="your_db_name"
+DB_USER="your_db_user"
+DB_PASS="your_secret_database_password"
 
-set -e
-echo "--- Starting Borg Backup Process $(date) ---"
+# Borg settings
+BORG_REPO="user@hostname:/path/to/your/borg_repo"
+BORG_PASSPHRASE="your_secret_borg_passphrase"
 
-# Step 1: Dump the database
+# Backup settings
+SOURCE_DIR="/path/to/your/website_files"
+DB_DUMP_LOCATION="/tmp/db_dump.sql" # A temporary location for the database dump
+ARCHIVE_NAME="website-$(date +%Y-%m-%dT%H:%M:%S)"
+
+# Pruning settings (how many backups to keep)
+KEEP_DAILY=7
+KEEP_WEEKLY=4
+KEEP_MONTHLY=6
+
+# --- Self-Cleaning Mechanism ---
+# This ensures the temp DB dump is ALWAYS removed when the script exits,
+# whether it succeeds, fails, or is cancelled.
+trap 'rm -f "$DB_DUMP_LOCATION"' EXIT
+
+# --- Main Script ---
+echo "--- Starting Borg Backup Process $(date '+%a %b %d %I:%M:%S %p %Z %Y') ---"
+
+# Step 1: Dump the database to a temporary SQL file
 echo "Step 1/3: Dumping database..."
-DB_DUMP_FILE="/tmp/vichan_db_dump.sql"
-mysqldump -u "$DB_USER" --password="$DB_PASS" --single-transaction "$DB_NAME" > "$DB_DUMP_FILE"
+mysqldump -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" > "$DB_DUMP_LOCATION"
+if [ $? -ne 0 ]; then
+    echo "  [ERROR] Failed to dump database. Aborting."
+    exit 1
+fi
 
-# Step 2: Create the Borg backup archive
+# Step 2: Create a new Borg archive
 echo "Step 2/3: Creating Borg archive..."
-borg create \
-    --verbose \
-    --stats \
-    --progress \
-    --compression lz4 \
-    --exclude-from "$BOT_PATH/.borgignore" \
-    ::'vichan-{now}' \
-    "$VICHAN_PATH" \
-    "$DB_DUMP_FILE" \
-    "$BOT_PATH"
+export BORG_PASSPHRASE
+borg create --stats --progress              \
+    "$BORG_REPO::$ARCHIVE_NAME"             \
+    "$SOURCE_DIR"                           \
+    "$DB_DUMP_LOCATION"
 
-# Step 3: Prune old backups and clean up
+if [ $? -ne 0 ]; then
+    echo "  [ERROR] Borg create command failed. Aborting."
+    exit 1
+fi
+
+# Step 3: Prune old backups to save space
 echo "Step 3/3: Pruning and cleaning up..."
-borg prune -v --list --keep-daily=7 --keep-weekly=4 --keep-monthly=6
-rm "$DB_DUMP_FILE"
+borg prune -v --list                        \
+    --keep-daily=$KEEP_DAILY                \
+    --keep-weekly=$KEEP_WEEKLY              \
+    --keep-monthly=$KEEP_MONTHLY            \
+    "$BORG_REPO"
+
+if [ $? -ne 0 ]; then
+    echo "  [ERROR] Borg prune command failed."
+    exit 1
+fi
 
 echo "------------------------------------"
 echo "✅ Borg Backup and Prune Complete! ✅"
