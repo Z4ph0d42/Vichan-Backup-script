@@ -6,9 +6,9 @@
 # =================================================================
 
 # --- Configuration ---
-# IMPORTANT: Fill in these variables with your actual credentials and paths.
+# IMPORTANT: Fill in these variables with your actual credentials and paths before running.
 # It is strongly recommended to use a .my.cnf file for database credentials
-# instead of putting the password directly in the script.
+# instead of putting the password directly in this script.
 
 # Database settings
 DB_NAME="your_db_name"
