@@ -1,132 +1,134 @@
 #!/bin/bash
 
 # =================================================================
-# VICHAN BORG RESTORE SCRIPT
-# Restores a Vichan site from a specified Borg backup archive.
-# WARNING: This script is DESTRUCTIVE and will overwrite your live site.
+# VICHAN RESTORE SCRIPT (BorgBackup)
+# -----------------------------------------------------------------
+# Description: Restores Database & Site Files from a Borg Archive.
+# Safety: Config files (Nginx/Fail2Ban) are extracted to a temp 
+#         folder for manual review, never overwriting /etc directly.
 # =================================================================
 
-# --- CONFIGURE YOUR SETTINGS HERE ---
-# These must match your live Vichan setup.
+# --- 1. USER CONFIGURATION (EDIT BEFORE RUNNING) ---
 
-# Database Credentials
-DB_USER="your_db_user"
-DB_PASS="your_db_password"
-DB_NAME="your_db_name"
+# Borg Repository Location
+# Example: ssh://user@192.168.1.50/mnt/backups/vichan
+BORG_REPO="ssh://user@backup_host/path/to/repo"
 
-# The full path to your Vichan installation's root directory.
-VICHAN_PATH="/var/www/your-site.com"
+# Live Site Configuration
+VICHAN_PATH="/var/www/html"   # Where your live board lives
+DB_NAME="vichan"              # Database name to overwrite
+DB_USER="vichan_user"         # Database user
+WEB_USER="www-data"           # Web server user (usually www-data)
 
-# The user your web server runs as (e.g., 'www-data' on Debian/Ubuntu).
-WEB_USER="www-data"
+# =================================================================
 
-# --- BORG CONFIGURATION ---
-# The script will use these variables to connect to your repository.
-
-# The full SSH URL to your Borg repository on the Raspberry Pi.
-export BORG_REPO="ssh://pi@raspberrypi.local/path/to/your/borg_repo"
-
-# The passphrase for your Borg repository.
-# You will be prompted for this when the script runs.
-# For manual use, it's safer to be prompted than to store it here.
-# export BORG_PASSPHRASE="your_super_secret_borg_passphrase"
-
-# --- END OF CONFIGURATION ---
-
-# Exit immediately if a command exits with a non-zero status.
-set -e
-
-# --- SAFETY CHECKS ---
-
-# 1. Check for root privileges
-if [ "$(id -u)" -ne 0 ]; then
-   echo "This script is destructive and must be run as root. Please use sudo." >&2
-   exit 1
-fi
-
-# 2. Check for archive name argument
-if [ -z "$1" ]; then
-  echo "Usage: sudo $0 <archive_name>"
-  echo "Example: sudo $0 vichan-2025-06-13T13:44:46"
-  echo "You can find archive names by running 'borg list \$BORG_REPO'"
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+  echo "❌ Please run as root (sudo)."
   exit 1
 fi
 
-ARCHIVE_TO_RESTORE=$1
-
-# 3. FINAL WARNING AND CONFIRMATION
-echo -e "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-echo -e "!!                      W A R N I N G                     !!"
-echo -e "!!                                                        !!"
-echo -e "!!  This script will PERMANENTLY WIPE your current      !!"
-echo -e "!!  database '$DB_NAME' and overwrite all files in !!"
-echo -e "!!  '$VICHAN_PATH'.                                       !!"
-echo -e "!!                                                        !!"
-echo -e "!!  You are about to restore the following archive:       !!"
-echo -e "!!  $ARCHIVE_TO_RESTORE"
-echo -e "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-read -p "Type 'YES' to proceed with the restoration: " CONFIRMATION
-
-if [ "$CONFIRMATION" != "YES" ]; then
-  echo "Restore cancelled by user."
-  exit 0
-fi
-
-# --- RESTORATION LOGIC ---
-
-# Create a secure temporary directory to work in.
-TEMP_DIR=$(mktemp -d)
-
-# This 'trap' command ensures the temporary directory is cleaned up when the script exits,
-# even if it fails partway through.
-trap 'echo "Cleaning up temporary files..."; rm -rf "$TEMP_DIR"' EXIT
-
-echo -e "\n--- Starting Restore Process ---"
-
-# Step 1: Extract the backup archive into the temporary directory.
-echo "Step 1/5: Extracting archive '$ARCHIVE_TO_RESTORE'..."
-# Borg will prompt for the repository passphrase here if the variable is not set.
-borg extract "$BORG_REPO::$ARCHIVE_TO_RESTORE" --path "$TEMP_DIR"
-
-# Find the full path to the extracted web root and database dump.
-# Note: The paths inside the archive reflect the original backup paths.
-EXTRACTED_VICHAN_PATH=$(find "$TEMP_DIR" -type d -path "*/$(basename $VICHAN_PATH)" | head -n 1)
-DB_DUMP_FILE=$(find "$TEMP_DIR" -type f -name "db_dump.sql" | head -n 1)
-
-if [ -z "$EXTRACTED_VICHAN_PATH" ] || [ -z "$DB_DUMP_FILE" ]; then
-    echo "ERROR: Could not find extracted site files or database dump in the archive."
+# Check for Archive Name argument
+if [ -z "$1" ]; then
+    echo "Usage: $0 <archive_name>"
+    echo "Example: $0 vichan-2026-01-15-0400"
+    echo "-----------------------------------------------------"
+    echo "To list available archives, run:"
+    echo "borg list $BORG_REPO"
     exit 1
 fi
 
-# Step 2: Replace the live site files.
-echo "Step 2/5: Replacing live site files..."
-BROKEN_BACKUP_PATH="${VICHAN_PATH}_broken_$(date +%F_%T)"
-echo "Moving current installation to '$BROKEN_BACKUP_PATH'..."
-mv "$VICHAN_PATH" "$BROKEN_BACKUP_PATH"
-echo "Moving restored files into place..."
-mv "$EXTRACTED_VICHAN_PATH" "$VICHAN_PATH"
+ARCHIVE="$1"
 
-# Step 3: Restore the database.
-echo "Step 3/5: Restoring the database..."
-echo "Dropping and re-creating database '$DB_NAME'..."
-mysql -u "$DB_USER" --password="$DB_PASS" -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;"
-echo "Importing data from SQL dump..."
-mysql -u "$DB_USER" --password="$DB_PASS" "$DB_NAME" < "$DB_DUMP_FILE"
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo "!!!                   W A R N I N G                       !!!"
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo "This script acts DESTRUCTIVELY on the live environment:"
+echo "1. It will DELETE all current files in $VICHAN_PATH"
+echo "2. It will DROP and replace database '$DB_NAME'"
+echo ""
+echo "System configs (Nginx/Fail2Ban) found in the backup will"
+echo "be extracted to /root/restored_configs/ for safety."
+echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+echo ""
+read -p "Type 'RESTORE' to confirm and proceed: " CONFIRM
 
-# Step 4: Set correct file permissions for the web server.
-echo "Step 4/5: Setting file permissions..."
-chown -R "$WEB_USER":"$WEB_USER" "$VICHAN_PATH"
+if [ "$CONFIRM" != "RESTORE" ]; then
+    echo "Aborted by user."
+    exit 0
+fi
 
-# Step 5: Finalization is handled by the 'trap' command which will clean up TEMP_DIR.
-echo "Step 5/5: Cleanup of temporary extraction files is complete."
+# 1. Create Secure Temp Directory
+TEMP_DIR=$(mktemp -d)
+echo "--> Extracting archive '$ARCHIVE' to temporary workspace..."
+echo "(Please enter Borg passphrase if prompted)"
+
+# 2. Extract Archive
+# Note: Borg extracts paths relative to how they were backed up (usually absolute paths)
+borg extract "$BORG_REPO::$ARCHIVE" --path "$TEMP_DIR"
+
+if [ $? -ne 0 ]; then
+    echo "❌ Extract failed. Check passphrase or connectivity."
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+# 3. Restore Database
+echo "--> Restoring Database..."
+# Find any .sql file in the temp dir
+SQL_FILE=$(find "$TEMP_DIR" -name "*.sql" | head -n 1)
+
+if [ -f "$SQL_FILE" ]; then
+    echo "    Found dump: $SQL_FILE"
+    # Recreating database ensures a clean slate
+    mysql -u "$DB_USER" -e "DROP DATABASE IF EXISTS $DB_NAME; CREATE DATABASE $DB_NAME;"
+    mysql -u "$DB_USER" "$DB_NAME" < "$SQL_FILE"
+    echo "✅ Database restored successfully."
+else
+    echo "⚠️  CRITICAL: No SQL dump found in this archive!"
+fi
+
+# 4. Restore Site Files
+echo "--> Restoring Website Files..."
+# Look for the web root inside the extracted folders
+EXTRACTED_WEB="$TEMP_DIR$VICHAN_PATH"
+
+if [ -d "$EXTRACTED_WEB" ]; then
+    # Clear live directory
+    rm -rf "${VICHAN_PATH:?}"/*
+    
+    # Copy restored files
+    cp -r "$EXTRACTED_WEB/." "$VICHAN_PATH/"
+    
+    # Fix Permissions
+    chown -R "$WEB_USER":"$WEB_USER" "$VICHAN_PATH"
+    echo "✅ Website files restored to $VICHAN_PATH"
+else
+    echo "⚠️  Website path not found in archive. Expected: $EXTRACTED_WEB"
+    echo "    Manual intervention may be required to move files."
+fi
+
+# 5. Handle Configs (Nginx / Fail2Ban / System)
+echo "--> Handling System Configurations..."
+RESTORE_DATE=$(date +%F_%H%M)
+CONFIG_RESTORE_DIR="/root/restored_configs_$RESTORE_DATE"
+mkdir -p "$CONFIG_RESTORE_DIR"
+
+if [ -d "$TEMP_DIR/etc" ]; then
+    cp -r "$TEMP_DIR/etc" "$CONFIG_RESTORE_DIR/"
+    echo "✅ /etc/ configuration files extracted to: $CONFIG_RESTORE_DIR"
+    echo "   NOTE: We do not overwrite /etc/ automatically."
+    echo "   Please manually compare your current Nginx/Fail2Ban configs"
+    echo "   with the restored versions in this folder."
+else
+    echo "ℹ️  No system configs (/etc) found in this backup."
+fi
+
+# 6. Cleanup
+echo "--> Cleaning up temporary files..."
+rm -rf "$TEMP_DIR"
 
 echo ""
-echo "------------------------------------"
-echo "✅ RESTORATION COMPLETE! ✅"
-echo "------------------------------------"
-echo "Your site has been restored from '$ARCHIVE_TO_RESTORE'."
-echo "The previous (broken) site files are saved at: $BROKEN_BACKUP_PATH"
-echo "Please verify the site is working and then manually delete that directory to save space."
-echo "Command to delete: sudo rm -rf $BROKEN_BACKUP_PATH"
-
-exit 0
+echo "=========================================="
+echo "      RESTORE OPERATION COMPLETE"
+echo "=========================================="
